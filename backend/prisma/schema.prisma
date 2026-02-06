@@ -1,0 +1,998 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+  GERENTE
+  VENDEDOR
+}
+
+// Módulos do sistema para controle de permissões
+enum SystemModule {
+  DASHBOARD
+  PRODUCTS
+  CATEGORIES
+  BRANDS
+  ORDERS
+  CUSTOMERS
+  REVIEWS
+  REPORTS
+  SETTINGS
+  INTEGRATIONS
+  USERS
+}
+
+// Níveis de acesso ao módulo
+enum AccessLevel {
+  NONE
+  VIEW
+  EDIT
+  FULL
+}
+
+// Configurações gerais do sistema
+model SystemSettings {
+  id                    String    @id @default("default")
+  
+  // Informações da empresa
+  companyName           String    @default("USS Brasil")
+  companyDocument       String?   // CNPJ
+  companyEmail          String?
+  companyPhone          String?
+  companyAddress        String?
+  
+  // Configurações de preço
+  taxRate               Decimal   @default(15) @db.Decimal(5, 2)  // Taxa de imposto (%)
+  stripeRate            Decimal   @default(3.99) @db.Decimal(5, 2) // Taxa Stripe (%)
+  stripeFixedFee        Decimal   @default(0.39) @db.Decimal(10, 2) // Taxa fixa Stripe
+  defaultProfitMargin   Decimal   @default(30) @db.Decimal(5, 2)   // Margem de lucro padrão (%)
+  useDollarRate         Boolean   @default(true)  // Usar cotação do dólar
+  manualDollarRate      Decimal?  @db.Decimal(10, 4) // Cotação manual se não usar API
+  dollarSpread          Decimal   @default(0) @db.Decimal(5, 2) // Spread sobre o dólar (%)
+  
+  // Parcelamento
+  defaultMaxInstallments Int      @default(12)    // Máximo de parcelas padrão
+  maxInstallmentsNoFee  Int       @default(3)     // Parcelas sem juros padrão
+  minInstallmentValue   Decimal   @default(50) @db.Decimal(10, 2) // Valor mínimo da parcela
+  
+  // Integrações - chaves sensíveis (criptografadas)
+  stripeSecretKey       String?
+  stripePublicKey       String?
+  stripeWebhookSecret   String?
+  cloudinaryCloudName   String?
+  cloudinaryApiKey      String?
+  cloudinaryApiSecret   String?
+  
+  // Configurações de e-mail
+  smtpHost              String?
+  smtpPort              Int?
+  smtpUser              String?
+  smtpPassword          String?
+  smtpFrom              String?
+  
+  // Cache da cotação do dólar
+  lastDollarRate        Decimal?  @db.Decimal(10, 4)
+  lastDollarRateAt      DateTime?
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@map("system_settings")
+}
+
+// Permissões por role
+model RolePermission {
+  id          String       @id @default(uuid())
+  role        Role
+  module      SystemModule
+  accessLevel AccessLevel  @default(NONE)
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  @@unique([role, module])
+  @@map("role_permissions")
+}
+
+// Log de atividades sensíveis
+model ActivityLog {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  
+  action      String    // CREATE, UPDATE, DELETE, VIEW, LOGIN, etc
+  module      String    // Módulo afetado
+  entityId    String?   // ID da entidade afetada
+  entityType  String?   // Tipo da entidade
+  details     Json?     // Detalhes adicionais
+  ipAddress   String?
+  userAgent   String?
+  
+  createdAt   DateTime  @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([module])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  password      String
+  firstName     String
+  lastName      String
+  phone         String?
+  role          Role      @default(USER)
+  isActive      Boolean   @default(true)
+  emailVerified Boolean   @default(false)
+  avatar        String?
+  
+  addresses     Address[]
+  orders        Order[]
+  reviews       Review[]
+  activityLogs  ActivityLog[]
+  wishlist      Wishlist[]
+  
+  refreshToken  String?
+  
+  // Campos para recuperação de senha
+  passwordResetToken   String?
+  passwordResetExpires DateTime?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([email])
+  @@index([passwordResetToken])
+  @@map("users")
+}
+
+model Address {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  label         String    @default("Casa")
+  recipientName String
+  street        String
+  number        String
+  complement    String?
+  neighborhood  String
+  city          String
+  state         String
+  zipCode       String
+  country       String    @default("Brasil")
+  isDefault     Boolean   @default(false)
+  
+  orders        Order[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([userId])
+  @@map("addresses")
+}
+
+model Category {
+  id            String    @id @default(uuid())
+  name          String    @unique
+  slug          String    @unique
+  description   String?
+  image         String?
+  isActive      Boolean   @default(true)
+  
+  parentId      String?
+  parent        Category? @relation("CategoryToCategory", fields: [parentId], references: [id])
+  children      Category[] @relation("CategoryToCategory")
+  
+  products      Product[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([slug])
+  @@map("categories")
+}
+
+model Brand {
+  id            String    @id @default(uuid())
+  name          String    @unique
+  slug          String    @unique
+  description   String?
+  logo          String?
+  isActive      Boolean   @default(true)
+  
+  products      Product[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([slug])
+  @@map("brands")
+}
+
+model Product {
+  id            String    @id @default(uuid())
+  name          String
+  slug          String    @unique
+  description   String
+  shortDescription String?
+  
+  // Precificação completa
+  price         Decimal   @db.Decimal(10, 2)           // Preço base
+  comparePrice  Decimal?  @db.Decimal(10, 2)           // Preço "de" (riscado)
+  costPrice     Decimal?  @db.Decimal(10, 2)           // Preço de custo
+  suggestedPrice Decimal?  @db.Decimal(10, 2)          // Preço sugerido
+  originalPrice Decimal?  @db.Decimal(10, 2)           // Preço original
+  discountPercent Decimal? @db.Decimal(5, 2)           // % de desconto
+  discountPrice Decimal?  @db.Decimal(10, 2)           // Preço com desconto
+  stripeDiscount Decimal? @db.Decimal(5, 2)            // % desconto Stripe
+  stripeFinalPrice Decimal? @db.Decimal(10, 2)         // Preço final Stripe
+  finalPrice    Decimal?  @db.Decimal(10, 2)           // Preço final ao cliente
+  markup        Decimal?  @db.Decimal(10, 2)           // Markup %
+  profitMargin  Decimal?  @db.Decimal(10, 2)           // Margem %
+  profitValue   Decimal?  @db.Decimal(10, 2)           // Lucro R$
+  
+  // SKU e NCM para controle fiscal
+  sku           String?   @unique
+  barcode       String?
+  ncm           String?   // Nomenclatura Comum do Mercosul
+  cest          String?   // Código Especificador da Substituição Tributária
+  origin        String?   @default("0") // 0=Nacional, 1=Importado, etc
+  
+  stock         Int       @default(0)
+  lowStockAlert Int       @default(5)
+  trackStock    Boolean   @default(true)
+  hasVariations Boolean   @default(false)  // Se true, estoque é soma das variações
+  
+  weight        Decimal?  @db.Decimal(10, 3)
+  width         Decimal?  @db.Decimal(10, 2)
+  height        Decimal?  @db.Decimal(10, 2)
+  length        Decimal?  @db.Decimal(10, 2)
+  
+  isActive      Boolean   @default(true)
+  isFeatured    Boolean   @default(false)
+  isNew         Boolean   @default(false)
+  isPreOrder    Boolean   @default(false)   // Produto sob encomenda
+  
+  // Contador de vendas (para ordenação por mais vendidos)
+  salesCount    Int       @default(0)
+  
+  // Parcelamento customizado por produto
+  maxInstallments       Int?      // Máximo de parcelas (usa padrão se null)
+  maxInstallmentsNoFee  Int?      // Parcelas sem juros (usa padrão se null)
+  minInstallmentValue   Decimal?  @db.Decimal(10, 2) // Valor mínimo da parcela
+  
+  // Preço em dólar (para produtos importados)
+  priceInDollar         Decimal?  @db.Decimal(10, 2)
+  dollarRateUsed        Decimal?  @db.Decimal(10, 4) // Cotação usada no cálculo
+  
+  // Condição do produto
+  condition     String?   @default("new") // new, used, refurbished
+  warranty      String?   // Ex: "12 meses", "6 meses fabricante"
+  
+  // Especificações em JSON
+  specifications Json?    // {"Processador": "A17 Pro", "RAM": "8GB"}
+  
+  // Arrays de variações simples
+  sizes         String[]  @default([])     // ["P", "M", "G", "GG"]
+  storageOptions String[] @default([])     // ["128GB", "256GB", "512GB"]
+  
+  categoryId    String
+  category      Category  @relation(fields: [categoryId], references: [id])
+  
+  brandId       String?
+  brand         Brand?    @relation(fields: [brandId], references: [id])
+  
+  images        ProductImage[]
+  variants      ProductVariant[]
+  colors        ProductColor[]
+  attributes    ProductAttribute[]
+  orderItems    OrderItem[]
+  reviews       Review[]
+  wishlists     Wishlist[]
+  
+  metaTitle     String?
+  metaDescription String?
+  tags          String[]
+  
+  // WavePro específico
+  isWavePro     Boolean   @default(false)
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([slug])
+  @@index([sku])
+  @@index([ncm])
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([isActive, isFeatured])
+  @@index([isWavePro])
+  @@index([salesCount])
+  @@map("products")
+}
+
+model ProductImage {
+  id            String    @id @default(uuid())
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  url           String
+  alt           String?
+  position      Int       @default(0)
+  isMain        Boolean   @default(false)
+  
+  createdAt     DateTime  @default(now())
+  
+  @@index([productId])
+  @@map("product_images")
+}
+
+// Cores do produto com imagens
+model ProductColor {
+  id            String    @id @default(uuid())
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  name          String    // Ex: "Preto", "Azul Marinho"
+  hexCode       String?   // Ex: "#000000"
+  images        String[]  @default([])  // URLs das imagens específicas da cor
+  stock         Int       @default(0)
+  priceModifier Decimal?  @db.Decimal(10, 2) // Adicional ou desconto
+  isDefault     Boolean   @default(false)
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([productId])
+  @@map("product_colors")
+}
+
+// Atributos customizados (tamanho, capacidade, etc)
+model ProductAttribute {
+  id            String    @id @default(uuid())
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  name          String    // Ex: "Tamanho", "Capacidade", "Material"
+  value         String    // Ex: "128GB", "P", "Silicone"
+  
+  createdAt     DateTime  @default(now())
+  
+  @@index([productId])
+  @@map("product_attributes")
+}
+
+model ProductVariant {
+  id            String    @id @default(uuid())
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  name          String    // Ex: "iPhone 15 Pro 256GB Preto"
+  sku           String?   @unique
+  barcode       String?
+  ncm           String?   // NCM da variação
+  
+  // Opções da variação
+  options       Json?     // {"cor": "Preto", "armazenamento": "128GB"}
+  
+  price         Decimal?  @db.Decimal(10, 2)
+  comparePrice  Decimal?  @db.Decimal(10, 2)
+  costPrice     Decimal?  @db.Decimal(10, 2)
+  priceAdjustment Decimal? @db.Decimal(10, 2)  // Ajuste de preço (+/- em relação ao base)
+  
+  stock         Int       @default(0)
+  image         String?
+  
+  // Números de série das unidades
+  serialNumbers String[]  @default([])
+  
+  weight        Decimal?  @db.Decimal(10, 3)
+  isActive      Boolean   @default(true)
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([productId])
+  @@map("product_variants")
+}
+
+model Order {
+  id            String      @id @default(uuid())
+  orderNumber   String      @unique
+  
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  
+  addressId     String
+  address       Address     @relation(fields: [addressId], references: [id])
+  
+  status        OrderStatus @default(PENDING)
+  
+  subtotal      Decimal     @db.Decimal(10, 2)
+  shippingCost  Decimal     @db.Decimal(10, 2)
+  discount      Decimal     @default(0) @db.Decimal(10, 2)
+  total         Decimal     @db.Decimal(10, 2)
+  
+  shippingMethod String?
+  trackingCode  String?
+  
+  notes         String?
+  
+  items         OrderItem[]
+  payment       Payment?
+  
+  paidAt        DateTime?
+  shippedAt     DateTime?
+  deliveredAt   DateTime?
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  @@index([userId])
+  @@index([orderNumber])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id            String    @id @default(uuid())
+  orderId       String
+  order         Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id])
+  
+  variantInfo   String?
+  quantity      Int
+  unitPrice     Decimal   @db.Decimal(10, 2)
+  totalPrice    Decimal   @db.Decimal(10, 2)
+  
+  createdAt     DateTime  @default(now())
+  
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  orderId           String        @unique
+  order             Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  stripePaymentId   String?       @unique
+  stripeCustomerId  String?
+  
+  method            String
+  status            PaymentStatus @default(PENDING)
+  
+  amount            Decimal       @db.Decimal(10, 2)
+  currency          String        @default("BRL")
+  
+  paidAt            DateTime?
+  failedAt          DateTime?
+  refundedAt        DateTime?
+  
+  metadata          Json?
+  
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  
+  @@index([stripePaymentId])
+  @@map("payments")
+}
+
+model Review {
+  id            String    @id @default(uuid())
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  rating        Int
+  title         String?
+  comment       String?
+  isApproved    Boolean   @default(false)
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@unique([productId, userId])
+  @@index([productId])
+  @@map("reviews")
+}
+
+// Lista de desejos
+model Wishlist {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([userId, productId])
+  @@index([userId])
+  @@map("wishlists")
+}
+
+// Cupons de desconto
+model Coupon {
+  id              String    @id @default(uuid())
+  code            String    @unique
+  description     String?
+  discountType    DiscountType @default(PERCENTAGE)
+  discountValue   Decimal   @db.Decimal(10, 2)
+  minOrderValue   Decimal?  @db.Decimal(10, 2)
+  maxDiscount     Decimal?  @db.Decimal(10, 2)
+  usageLimit      Int?
+  usageCount      Int       @default(0)
+  isActive        Boolean   @default(true)
+  startsAt        DateTime?
+  expiresAt       DateTime?
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@index([code])
+  @@map("coupons")
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+// Contatos/Mensagens
+model Contact {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  phone     String?
+  subject   String
+  message   String
+  isRead    Boolean  @default(false)
+  
+  createdAt DateTime @default(now())
+  
+  @@map("contacts")
+}
+
+// Newsletter
+model Newsletter {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  isActive  Boolean  @default(true)
+  
+  createdAt DateTime @default(now())
+  
+  @@map("newsletters")
+}
+
+// ==========================================
+// CMS - SISTEMA DE GERENCIAMENTO DE CONTEÚDO
+// ==========================================
+
+// Slides do Hero Section
+model HeroSlide {
+  id          String   @id @default(uuid())
+  title       String
+  subtitle    String?
+  description String?
+  imageUrl    String
+  mobileImageUrl String?
+  ctaText     String?  // Texto do botão de ação
+  ctaLink     String?  // Link do botão
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("hero_slides")
+}
+
+// Banners promocionais
+model Banner {
+  id          String   @id @default(uuid())
+  title       String
+  imageUrl    String
+  mobileImageUrl String?
+  link        String?
+  position    String   // "home-top", "home-middle", "sidebar", "footer"
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  startDate   DateTime?
+  endDate     DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("banners")
+}
+
+// Conteúdo das páginas institucionais
+model PageContent {
+  id          String   @id @default(uuid())
+  slug        String   @unique // "about", "privacy", "terms", etc.
+  title       String
+  content     String   @db.Text
+  metaTitle   String?
+  metaDescription String?
+  isPublished Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("page_contents")
+}
+
+// Seções da página inicial
+model HomeSection {
+  id          String   @id @default(uuid())
+  type        String   // "featured-products", "categories", "testimonials", "brands", "features"
+  title       String
+  subtitle    String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  config      Json?    // Configurações específicas da seção
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("home_sections")
+}
+
+// Depoimentos/Testimonials
+model Testimonial {
+  id          String   @id @default(uuid())
+  name        String
+  role        String?  // "Cliente", "Empresário", etc.
+  company     String?
+  content     String
+  rating      Int      @default(5)
+  avatarUrl   String?
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("testimonials")
+}
+
+// Configurações visuais do site
+model SiteConfig {
+  id              String  @id @default(uuid())
+  logoUrl         String?
+  logoWhiteUrl    String? // Logo para fundos escuros
+  faviconUrl      String?
+  primaryColor    String  @default("#3B82F6")
+  secondaryColor  String  @default("#10B981")
+  accentColor     String  @default("#F59E0B")
+  heroTitle       String  @default("WavePro Tecnologia")
+  heroSubtitle    String  @default("A melhor empresa de revenda de tecnologia do país")
+  footerText      String?
+  socialFacebook  String?
+  socialInstagram String?
+  socialTwitter   String?
+  socialLinkedin  String?
+  socialYoutube   String?
+  whatsappNumber  String?
+  
+  updatedAt       DateTime @updatedAt
+  
+  @@map("site_config")
+}
+
+// ==========================================
+// BLOG - SISTEMA DE NOTÍCIAS E ARTIGOS
+// ==========================================
+
+model BlogPost {
+  id              String   @id @default(uuid())
+  title           String
+  slug            String   @unique
+  excerpt         String?  @db.Text
+  content         String   @db.Text
+  coverImageUrl   String?
+  category        String   // "dicas", "lancamentos", "produtos", "tutoriais"
+  tags            String[] @default([])
+  
+  authorId        String?
+  authorName      String?
+  authorAvatar    String?
+  
+  readTime        Int      @default(5) // minutos
+  views           Int      @default(0)
+  
+  isPublished     Boolean  @default(false)
+  isFeatured      Boolean  @default(false)
+  publishedAt     DateTime?
+  
+  metaTitle       String?
+  metaDescription String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([slug])
+  @@index([category])
+  @@index([isPublished, publishedAt])
+  @@map("blog_posts")
+}
+
+// ==========================================
+// PROMOÇÕES E OFERTAS
+// ==========================================
+
+model Promotion {
+  id              String   @id @default(uuid())
+  title           String
+  subtitle        String?
+  description     String?
+  imageUrl        String?
+  discount        Int?     // Percentual de desconto
+  link            String?
+  color           String?  // Gradient colors like "from-red-500 to-orange-500"
+  
+  startsAt        DateTime?
+  endsAt          DateTime?
+  
+  isActive        Boolean  @default(true)
+  order           Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@map("promotions")
+}
+
+// ==========================================
+// LOJAS FÍSICAS
+// ==========================================
+
+model Store {
+  id              String   @id @default(uuid())
+  name            String
+  slug            String   @unique
+  description     String?
+  
+  // Endereço
+  address         String
+  city            String
+  state           String
+  zipCode         String
+  country         String   @default("Brasil")
+  
+  // Coordenadas para mapa
+  latitude        Decimal? @db.Decimal(10, 8)
+  longitude       Decimal? @db.Decimal(11, 8)
+  
+  // Contato
+  phone           String?
+  whatsapp        String?
+  email           String?
+  
+  // Horários
+  openingHours    Json?    // {"seg": "09:00-18:00", "ter": "09:00-18:00"...}
+  
+  // Imagens
+  imageUrl        String?
+  images          String[] @default([])
+  
+  isActive        Boolean  @default(true)
+  isFlagship      Boolean  @default(false) // Loja principal
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([slug])
+  @@index([city, state])
+  @@map("stores")
+}
+
+// ==========================================
+// VAGAS DE EMPREGO
+// ==========================================
+
+model JobOpening {
+  id              String   @id @default(uuid())
+  title           String
+  slug            String   @unique
+  department      String   // "vendas", "administrativo", "ti", "logistica"
+  location        String
+  type            String   // "clt", "pj", "estagio", "temporario"
+  workMode        String   // "presencial", "hibrido", "remoto"
+  
+  description     String   @db.Text
+  requirements    String   @db.Text
+  benefits        String?  @db.Text
+  
+  salaryRange     String?  // "R$ 2.000 - R$ 3.500"
+  isNegotiable    Boolean  @default(false)
+  
+  isActive        Boolean  @default(true)
+  isFeatured      Boolean  @default(false)
+  
+  applications    JobApplication[]
+  
+  expiresAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([slug])
+  @@index([department])
+  @@index([isActive])
+  @@map("job_openings")
+}
+
+model JobApplication {
+  id              String   @id @default(uuid())
+  jobId           String
+  job             JobOpening @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  name            String
+  email           String
+  phone           String
+  linkedinUrl     String?
+  portfolioUrl    String?
+  resumeUrl       String?
+  coverLetter     String?  @db.Text
+  
+  status          String   @default("pending") // pending, reviewing, interview, approved, rejected
+  notes           String?  @db.Text
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([jobId])
+  @@index([email])
+  @@index([status])
+  @@map("job_applications")
+}
+
+// ==========================================
+// FAQ - PERGUNTAS FREQUENTES
+// ==========================================
+
+model FAQ {
+  id              String   @id @default(uuid())
+  question        String
+  answer          String   @db.Text
+  category        String   // "pedidos", "pagamento", "envio", "trocas", "produtos", "conta"
+  
+  order           Int      @default(0)
+  isActive        Boolean  @default(true)
+  
+  views           Int      @default(0)
+  helpfulCount    Int      @default(0)
+  notHelpfulCount Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([category])
+  @@map("faqs")
+}
+
+// ==========================================
+// NOTIFICAÇÕES
+// ==========================================
+
+model Notification {
+  id              String   @id @default(uuid())
+  userId          String?  // Null = notificação geral
+  
+  type            String   // "order", "promo", "system", "news"
+  title           String
+  message         String
+  link            String?
+  imageUrl        String?
+  
+  isRead          Boolean  @default(false)
+  readAt          DateTime?
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+// ==========================================
+// ESTATÍSTICAS DO SITE
+// ==========================================
+
+model SiteStats {
+  id              String   @id @default(uuid())
+  date            DateTime @unique @default(now()) @db.Date
+  
+  pageViews       Int      @default(0)
+  uniqueVisitors  Int      @default(0)
+  
+  productsViewed  Int      @default(0)
+  addToCart       Int      @default(0)
+  checkoutStarted Int      @default(0)
+  ordersPlaced    Int      @default(0)
+  
+  revenue         Decimal  @default(0) @db.Decimal(12, 2)
+  averageOrderValue Decimal @default(0) @db.Decimal(10, 2)
+  
+  newUsers        Int      @default(0)
+  newsletterSignups Int    @default(0)
+  
+  @@index([date])
+  @@map("site_stats")
+}
+
+// ==========================================
+// CONFIGURAÇÃO DE FRETE
+// ==========================================
+
+model ShippingZone {
+  id              String   @id @default(uuid())
+  name            String
+  states          String[] @default([])
+  
+  freeShippingMin Decimal? @db.Decimal(10, 2) // Valor mínimo para frete grátis
+  
+  carriers        ShippingCarrier[]
+  
+  isActive        Boolean  @default(true)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@map("shipping_zones")
+}
+
+model ShippingCarrier {
+  id              String   @id @default(uuid())
+  zoneId          String
+  zone            ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  
+  name            String   // "PAC", "SEDEX", "Transportadora X"
+  code            String   // Código do serviço
+  
+  minDays         Int      // Prazo mínimo
+  maxDays         Int      // Prazo máximo
+  
+  baseCost        Decimal  @db.Decimal(10, 2)
+  costPerKg       Decimal  @db.Decimal(10, 2)
+  
+  isActive        Boolean  @default(true)
+  
+  @@index([zoneId])
+  @@map("shipping_carriers")
+}

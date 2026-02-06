@@ -1,0 +1,183 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --primary: 199 89% 70%;
+    --border: 214 32% 91%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  /* Glassmorphism */
+  .glass {
+    @apply bg-white/80 backdrop-blur-xl border border-primary-200/50;
+  }
+  
+  .glass-card {
+    @apply bg-white/90 backdrop-blur-lg border border-border rounded-2xl shadow-card;
+  }
+
+  /* Glow Effects */
+  .glow-blue {
+    box-shadow: 0 0 20px rgba(125, 211, 252, 0.3);
+  }
+  
+  .text-glow {
+    text-shadow: 0 0 30px rgba(125, 211, 252, 0.5);
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-500 via-primary-400 to-primary-600 bg-clip-text text-transparent;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 font-medium rounded-lg transition-all duration-200;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary text-white font-semibold rounded-xl 
+           hover:bg-primary-hover transition-all duration-300 hover:shadow-glow active:scale-95;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 bg-transparent border border-border 
+           text-foreground font-medium rounded-xl hover:bg-surface-hover hover:border-primary/50 
+           transition-all duration-300 active:scale-95;
+  }
+
+  .btn-outline {
+    @apply btn bg-transparent border-2 border-primary text-primary-dark hover:bg-primary hover:text-white;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-text-secondary 
+           hover:text-foreground hover:bg-surface-hover rounded-lg transition-all duration-200;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+
+  .btn-lg {
+    @apply px-6 py-3 text-lg;
+  }
+
+  .card {
+    @apply bg-white rounded-2xl border border-border p-6 transition-all duration-300 shadow-card;
+  }
+
+  .card-hover {
+    @apply hover:border-primary/30 hover:shadow-card-hover hover:-translate-y-1;
+  }
+
+  .card-interactive {
+    @apply card card-hover cursor-pointer;
+  }
+
+  .input {
+    @apply w-full px-4 py-3 bg-white border border-border rounded-xl text-foreground 
+           placeholder:text-text-muted focus:outline-none focus:border-primary focus:ring-2 
+           focus:ring-primary/20 transition-all duration-200;
+  }
+
+  .input-error {
+    @apply border-error focus:border-error focus:ring-error;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-text-secondary mb-1.5;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-3 py-1 text-xs font-medium rounded-full;
+  }
+
+  .badge-primary {
+    @apply badge bg-primary/20 text-primary border border-primary/30;
+  }
+
+  .badge-success {
+    @apply badge bg-success/20 text-success border border-success/30;
+  }
+
+  .badge-error {
+    @apply badge bg-error/20 text-error border border-error/30;
+  }
+
+  .badge-warning {
+    @apply badge bg-warning/20 text-warning border border-warning/30;
+  }
+
+  .skeleton {
+    @apply animate-pulse bg-surface rounded;
+  }
+
+  .link {
+    @apply text-primary hover:text-primary-hover transition-colors duration-200;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary-500 to-primary-700 bg-clip-text text-transparent;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .glass {
+    @apply bg-white/80 backdrop-blur-xl;
+  }
+
+  /* WavePro Section Styles - Preto e Amarelo */
+  .wavepro-section {
+    @apply bg-wavepro-bg text-wavepro-text;
+  }
+
+  .wavepro-btn {
+    @apply bg-wavepro-primary text-black font-semibold hover:bg-wavepro-accent;
+  }
+
+  .wavepro-glow {
+    box-shadow: 0 0 20px rgba(234, 179, 8, 0.3);
+  }
+
+  .wavepro-gradient-text {
+    @apply bg-gradient-to-r from-wavepro-primary via-yellow-300 to-wavepro-primary bg-clip-text text-transparent;
+  }
+}
+
+/* Swiper customization */
+.swiper-pagination-bullet {
+  @apply bg-primary-300 !important;
+}
+
+.swiper-pagination-bullet-active {
+  @apply bg-primary-600 !important;
+}
